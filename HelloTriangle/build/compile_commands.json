@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/ethan/Repos/VkExamples/HelloTriangle/build",
+  "command": "/usr/bin/g++ -g -o CMakeFiles/HelloTriangle.dir/main.cpp.o -c /home/ethan/Repos/VkExamples/HelloTriangle/main.cpp",
+  "file": "/home/ethan/Repos/VkExamples/HelloTriangle/main.cpp",
+  "output": "CMakeFiles/HelloTriangle.dir/main.cpp.o"
+}
+]
