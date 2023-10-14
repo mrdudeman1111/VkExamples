@@ -1,3 +1,0 @@
-/home/ethan/Repos/VkExamples/HelloTriangle/build/CMakeFiles/HelloTriangle.dir
-/home/ethan/Repos/VkExamples/HelloTriangle/build/CMakeFiles/edit_cache.dir
-/home/ethan/Repos/VkExamples/HelloTriangle/build/CMakeFiles/rebuild_cache.dir
