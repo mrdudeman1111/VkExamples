@@ -1,19 +1,30 @@
+#include <assimp/importerdesc.h>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <glm/fwd.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
 #include <vulkan/vulkan_core.h>
+
+#include <assimp/mesh.h>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/fwd.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #ifndef NDEBUG
   std::vector<const char*> InstLayers = {"VK_LAYER_KHRONOS_validation"}; // VK_LAYER_KHRONOS_VALIDATION so we can get debug info in CLI
@@ -79,11 +90,11 @@ struct
   VkDeviceMemory TransitMemory;
   VkBuffer TransitBuffer;
 
-  VkDeviceMemory TriangleVertexMemory;
-  VkBuffer TriangleVertexBuffer;
+  VkDeviceMemory MeshVertexMemory;
+  VkBuffer MeshVertexBuffer;
 
-  VkDeviceMemory TriangleIndexMemory;
-  VkBuffer TriangleIndexBuffer;
+  VkDeviceMemory MeshIndexMemory;
+  VkBuffer MeshIndexBuffer;
 
   VkFence MemoryFence = VK_NULL_HANDLE;
 
@@ -95,6 +106,7 @@ struct
 
   // used to Synchronize render submitions, so we don't overlap render operations (this will lead to corrupted framebuffers and lag)
   VkSemaphore RenderSemaphore = VK_NULL_HANDLE;
+
 
   /*
     Acquire next image()
@@ -109,6 +121,20 @@ struct
     - RenderSemaphore: Wait for the image to be rendered.
   */
 
+  // Descriptor Pool for our MVP Buffer
+  VkDescriptorPool DescPool;
+
+  // MVP Layout
+  VkDescriptorSetLayout DescLayout;
+
+  // MVP Set
+  VkDescriptorSet DescSet;
+
+  // MVP Buffer
+  VkBuffer mvpBuffer;
+  VkDeviceMemory mvpMemory;
+
+  Assimp::Importer Importer;
 } Context;
 // contains all the vulkan structures that will be used to render.
 
@@ -123,6 +149,8 @@ void InitCommandBuffer();
 void InitShaders();
 void InitPipeline();
 void InitMesh();
+void InitDescriptorPool();
+void InitDescriptors();
 void InitSync();
 void RecordRender();
 void SubmitRender(uint32_t RenderIndex);
@@ -142,6 +170,7 @@ void Cleanup();
 // CommandBuffer
 // Sem/fence
 // Shaders
+// Mesh
 // Descriptors.
 // Pipeline
 // VBO, IBO.
@@ -149,19 +178,67 @@ void Cleanup();
   // Record Render commands
   // Present
 
+struct Matrix
+{
+  glm::mat4 World;
+  glm::mat4 View;
+  glm::mat4 Proj;
+} MVP;
 
 
+// Heads up, classes aren't packed like structs, so things might get messy if you try to define the Vertetx as a class instead of a struct.
+struct Vertex
+{
+  glm::vec3 vPos;
+  glm::vec3 vColor;
+};
 
 struct
 {
-  glm::vec2 Vertices[3] = {glm::vec2{0.5f, 0.5f}, glm::vec2{-0.5f, 0.5f}, glm::vec2{0.f, -0.5f}};
+  std::vector<Vertex> Vertices;
+  std::vector<uint32_t> Indices;
+} Mesh;
 
-  uint32_t Indices[3] = {2, 1, 0};
+/* we will now put our vertex input description's bindings/attributes so we can see the changes better */
+std::vector<VkVertexInputBindingDescription> GetBindingDescription()
+{
+  std::vector<VkVertexInputBindingDescription> Ret(1);
 
-} TriangleMesh;
+  Ret[0].stride = sizeof(Vertex);
+  Ret[0].binding = 0;
+  Ret[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  return Ret;
+}
+
+std::vector<VkVertexInputAttributeDescription> GetAttributeDescription()
+{
+  std::vector<VkVertexInputAttributeDescription> Ret(2);
+
+  Ret[0].binding = 0;
+  Ret[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  Ret[0].location = 0;
+  Ret[0].offset = offsetof(Vertex, vPos);
+
+  Ret[1].binding = 0;
+  Ret[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  Ret[1].location = 1;
+  Ret[1].offset = offsetof(Vertex, vColor);
+
+  return Ret;
+}
 
 int main()
 {
+  /* before doing anything, let's quickly set up our mvp (camera) */
+
+  MVP.World = glm::mat4(1.f);
+
+  MVP.View = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -5.f));
+
+  MVP.Proj = glm::perspective(glm::radians(90.f), 16.f/9.f, 0.f, 100.f);
+  MVP.Proj[1][1] *= -1;
+
   // this function initiates our Window Library, so we can create a window on the screen with one function later.
   glfwInit();
 
@@ -210,6 +287,10 @@ int main()
   InitSync();
 
   InitMesh();
+
+  InitDescriptorPool();
+
+  InitDescriptors();
 
   RecordRender();
 
@@ -711,12 +792,32 @@ void InitShaders()
 
 void InitPipeline()
 {
+  VkDescriptorSetLayoutBinding Binding{};
+
+  // setup descriptor bindin for the MVP
+  {
+    Binding.descriptorCount = 1;
+    Binding.binding = 0;
+    Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+    VkDescriptorSetLayoutCreateInfo LayoutCI{};
+    LayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    LayoutCI.bindingCount = 1;
+    LayoutCI.pBindings = &Binding;
+
+    if((Error = vkCreateDescriptorSetLayout(Context.Device, &LayoutCI, nullptr, &Context.DescLayout)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create descriptor pool with error: " + std::to_string(Error));
+    }
+  }
+
   // Create the pipeline layout
   {
     VkPipelineLayoutCreateInfo PipeLayoutInfo{};
     PipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    PipeLayoutInfo.setLayoutCount = 0;
-    PipeLayoutInfo.pSetLayouts = nullptr;
+    PipeLayoutInfo.setLayoutCount = 1;
+    PipeLayoutInfo.pSetLayouts = &Context.DescLayout;
     PipeLayoutInfo.pushConstantRangeCount = 0;
     PipeLayoutInfo.pPushConstantRanges = nullptr;
 
@@ -798,27 +899,19 @@ void InitPipeline()
   }
 
   VkPipelineVertexInputStateCreateInfo VertexInput{};
-    VkVertexInputAttributeDescription VertexAttribute{};
-    VkVertexInputBindingDescription VertexBinding{};
+    std::vector<VkVertexInputAttributeDescription> VertexAttribute;
+    std::vector<VkVertexInputBindingDescription> VertexBinding;
 
-  // Vertex input for shaders.
+  // Setup Vertex Input
   {
-    VertexBinding.stride = sizeof(glm::vec2);
-    VertexBinding.binding = 0;
-    VertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VertexAttribute.binding = 0;
-    VertexAttribute.location = 0;
-    VertexAttribute.format = VK_FORMAT_R32G32_SFLOAT;
-    VertexAttribute.offset = 0;
+    VertexAttribute = GetAttributeDescription();
+    VertexBinding = GetBindingDescription();
 
     VertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-    VertexInput.vertexBindingDescriptionCount = 1;
-    VertexInput.pVertexBindingDescriptions = &VertexBinding;
-
-    VertexInput.vertexAttributeDescriptionCount = 1;
-    VertexInput.pVertexAttributeDescriptions = &VertexAttribute;
+    VertexInput.vertexBindingDescriptionCount = VertexBinding.size();
+    VertexInput.vertexAttributeDescriptionCount = VertexAttribute.size();
+    VertexInput.pVertexBindingDescriptions = VertexBinding.data();
+    VertexInput.pVertexAttributeDescriptions = VertexAttribute.data();
   }
 
   VkPipelineDepthStencilStateCreateInfo DepthState{};
@@ -890,6 +983,62 @@ void InitPipeline()
 
 void InitMesh()
 {
+  // Load Mesh file
+  const aiScene* pScene = Context.Importer.ReadFile("Mesh.dae", aiProcess_Triangulate);
+
+  // check for meshes, if none, then throw error
+  if(pScene->HasMeshes())
+  {
+    // Prepare vertex array
+    Mesh.Vertices.resize(pScene->mMeshes[0]->mNumVertices);
+
+    // Fill Vertex array and vertex colors if there are any
+    for(uint32_t i = 0; i < pScene->mMeshes[0]->mNumVertices; i++)
+    {
+      Mesh.Vertices[i].vPos.x = (-1*pScene->mMeshes[0]->mVertices[i].z);
+      Mesh.Vertices[i].vPos.y = pScene->mMeshes[0]->mVertices[i].y;
+      Mesh.Vertices[i].vPos.z = pScene->mMeshes[0]->mVertices[i].x;
+
+      if(pScene->mMeshes[0]->HasVertexColors(i))
+      {
+        Mesh.Vertices[i].vColor.r = pScene->mMeshes[0]->mColors[i]->r;
+        Mesh.Vertices[i].vColor.g = pScene->mMeshes[0]->mColors[i]->g;
+        Mesh.Vertices[i].vColor.b = pScene->mMeshes[0]->mColors[i]->b;
+      }
+      else
+      {
+        Mesh.Vertices[i].vColor.r = 1.f;
+        Mesh.Vertices[i].vColor.g = 1.f;
+        Mesh.Vertices[i].vColor.b = 1.f;
+      }
+    }
+
+    // Prepare Index Array
+    Mesh.Indices.resize(pScene->mMeshes[0]->mNumFaces*3);
+
+    uint32_t Index = 0;
+
+    // Index = Position in mesh.Indices and i = Position in mFaces
+
+    // Fill Index Array
+    for(uint32_t i = 0; i < pScene->mMeshes[0]->mNumFaces; i++)
+    {
+      // if the number of Indices isn't 3. Then it's not a triangle, we don't want that.
+      // the pipeline topoloy type is VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST meaning we can only assemble triangles
+      assert(Mesh.Indices[i] = pScene->mMeshes[0]->mFaces[i].mNumIndices == 3);
+
+      Index = i*3;
+
+      Mesh.Indices[Index] = pScene->mMeshes[0]->mFaces[i].mIndices[0];
+      Mesh.Indices[Index+1] = pScene->mMeshes[0]->mFaces[i].mIndices[1];
+      Mesh.Indices[Index+2] = pScene->mMeshes[0]->mFaces[i].mIndices[2];
+    }
+  }
+  else
+  {
+    throw std::runtime_error("Tried to load mesh file with no meshes");
+  }
+
   // Create TransitBuffer
   {
     /* Define Buffer */
@@ -933,17 +1082,17 @@ void InitMesh()
   {
     VkBufferCreateInfo vBufferInfo{};
     vBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    vBufferInfo.size = sizeof(glm::vec2) * 3;
+    vBufferInfo.size = sizeof(Vertex)*Mesh.Vertices.size();
     vBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     vBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if((Error = vkCreateBuffer(Context.Device, &vBufferInfo, nullptr, &Context.TriangleVertexBuffer)) != VK_SUCCESS)
+    if((Error = vkCreateBuffer(Context.Device, &vBufferInfo, nullptr, &Context.MeshVertexBuffer)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to create triangle vertex buffer with error: " + std::to_string(Error));
     }
 
     VkMemoryRequirements vMemReq;
-    vkGetBufferMemoryRequirements(Context.Device, Context.TriangleVertexBuffer, &vMemReq);
+    vkGetBufferMemoryRequirements(Context.Device, Context.MeshVertexBuffer, &vMemReq);
 
     VkMemoryAllocateInfo vAllocInfo{};
     vAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -953,12 +1102,12 @@ void InitMesh()
 
     if(vMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Vertex buffer supports Local\n";
 
-    if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.TriangleVertexMemory)) != VK_SUCCESS)
+    if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.MeshVertexMemory)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to allocate Triangle Vertex memory with error: " + std::to_string(Error));
     }
 
-    if((Error = vkBindBufferMemory(Context.Device, Context.TriangleVertexBuffer, Context.TriangleVertexMemory, 0)) != VK_SUCCESS)
+    if((Error = vkBindBufferMemory(Context.Device, Context.MeshVertexBuffer, Context.MeshVertexMemory, 0)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to bind Triangle vertex buffer to memory with error: " + std::to_string(Error));
     }
@@ -968,17 +1117,17 @@ void InitMesh()
   {
     VkBufferCreateInfo iBufferInfo{};
     iBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    iBufferInfo.size = sizeof(uint32_t) * 3;
+    iBufferInfo.size = sizeof(uint32_t) * Mesh.Indices.size();
     iBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     iBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if((Error = vkCreateBuffer(Context.Device, &iBufferInfo, nullptr, &Context.TriangleIndexBuffer)) != VK_SUCCESS)
+    if((Error = vkCreateBuffer(Context.Device, &iBufferInfo, nullptr, &Context.MeshIndexBuffer)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to create Triangle Index buffer with error: " + std::to_string(Error));
     }
 
     VkMemoryRequirements iMemReq;
-    vkGetBufferMemoryRequirements(Context.Device, Context.TriangleIndexBuffer, &iMemReq);
+    vkGetBufferMemoryRequirements(Context.Device, Context.MeshIndexBuffer, &iMemReq);
 
     VkMemoryAllocateInfo iAllocInfo{};
     iAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -988,12 +1137,12 @@ void InitMesh()
 
     if(iMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Index buffer supports Local\n";
 
-    if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.TriangleIndexMemory)) != VK_SUCCESS)
+    if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.MeshIndexMemory)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to allocate Triangle Index Memory with error: " + std::to_string(Error));
     }
 
-    if((Error = vkBindBufferMemory(Context.Device, Context.TriangleIndexBuffer, Context.TriangleIndexMemory, 0)) != VK_SUCCESS)
+    if((Error = vkBindBufferMemory(Context.Device, Context.MeshIndexBuffer, Context.MeshIndexMemory, 0)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to bind Triangle index memory with error: " + std::to_string(Error));
     }
@@ -1005,7 +1154,7 @@ void InitMesh()
 
   // Fill Transit Buffer with Vertices
   {
-    memcpy((glm::vec2*)TransitMemory, TriangleMesh.Vertices, sizeof(glm::vec2)*3);
+    memcpy((Vertex*)TransitMemory, Mesh.Vertices.data(), sizeof(Vertex)*Mesh.Vertices.size());
   }
 
   // Transfer Vertices from Transit to Vertex Buffer
@@ -1014,12 +1163,12 @@ void InitMesh()
     BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkBufferCopy CopyInfo{};
-    CopyInfo.size = sizeof(glm::vec2) * 3;
+    CopyInfo.size = sizeof(Vertex) * Mesh.Vertices.size();
     CopyInfo.srcOffset = 0;
     CopyInfo.dstOffset = 0;
 
     vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
-      vkCmdCopyBuffer(Context.MemoryCmd, Context.TransitBuffer, Context.TriangleVertexBuffer, 1, &CopyInfo);
+      vkCmdCopyBuffer(Context.MemoryCmd, Context.TransitBuffer, Context.MeshVertexBuffer, 1, &CopyInfo);
     vkEndCommandBuffer(Context.MemoryCmd);
 
     VkSubmitInfo SubmitInfo{};
@@ -1041,7 +1190,7 @@ void InitMesh()
 
   // Fill Transfer buffer with Indices
   {
-    memcpy((uint32_t*)TransitMemory, TriangleMesh.Indices, sizeof(uint32_t)*3);
+    memcpy((uint32_t*)TransitMemory, Mesh.Indices.data(), sizeof(uint32_t)*Mesh.Indices.size());
   }
 
   // Copy Indices from Transit to Index Buffer
@@ -1050,12 +1199,12 @@ void InitMesh()
     BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkBufferCopy CopyInfo{};
-    CopyInfo.size = sizeof(uint32_t) * 3;
+    CopyInfo.size = sizeof(uint32_t) * Mesh.Indices.size();
     CopyInfo.srcOffset = 0;
     CopyInfo.dstOffset = 0;
 
     vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
-      vkCmdCopyBuffer(Context.MemoryCmd, Context.TransitBuffer, Context.TriangleIndexBuffer, 1, &CopyInfo);
+      vkCmdCopyBuffer(Context.MemoryCmd, Context.TransitBuffer, Context.MeshIndexBuffer, 1, &CopyInfo);
     vkEndCommandBuffer(Context.MemoryCmd);
 
     VkSubmitInfo SubmitInfo{};
@@ -1073,6 +1222,123 @@ void InitMesh()
     vkResetFences(Context.Device, 1, &Context.MemoryFence);
 
     vkResetCommandBuffer(Context.MemoryCmd, 0);
+  }
+
+  vkUnmapMemory(Context.Device, Context.TransitMemory);
+}
+
+void InitDescriptorPool()
+{
+  VkDescriptorPoolSize Size;
+  Size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  Size.descriptorCount = 1;
+
+  VkDescriptorPoolCreateInfo PoolInfo{};
+  PoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  PoolInfo.maxSets = 1;
+  PoolInfo.poolSizeCount = 1;
+  PoolInfo.pPoolSizes = &Size;
+
+  if((Error = vkCreateDescriptorPool(Context.Device, &PoolInfo, nullptr, &Context.DescPool)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("failed to create descriptor pool\n");
+  }
+}
+
+void InitDescriptors()
+{
+  // allocate descriptor
+  {
+    VkDescriptorSetAllocateInfo AllocInfo{};
+    AllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    AllocInfo.descriptorPool = Context.DescPool;
+    AllocInfo.descriptorSetCount = 1;
+    AllocInfo.pSetLayouts = &Context.DescLayout;
+
+    if((Error = vkAllocateDescriptorSets(Context.Device, &AllocInfo, &Context.DescSet)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create descriptor sets with error: " + std::to_string(Error));
+    }
+  }
+
+  // allocate mvp buffer
+  {
+    VkBufferCreateInfo BufferCI{};
+    BufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    BufferCI.size = sizeof(MVP);
+    BufferCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    BufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if((Error = vkCreateBuffer(Context.Device, &BufferCI, nullptr, &Context.mvpBuffer)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create MVP Buffer with error: " + std::to_string(Error));
+    }
+
+    VkMemoryRequirements BufferMemoryRequirements;
+    vkGetBufferMemoryRequirements(Context.Device, Context.mvpBuffer, &BufferMemoryRequirements);
+
+    VkMemoryAllocateInfo MemAlloc{};
+    MemAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    MemAlloc.allocationSize = BufferMemoryRequirements.size;
+    MemAlloc.memoryTypeIndex = Context.Memory.Local;
+
+    if((Error = vkAllocateMemory(Context.Device, &MemAlloc, nullptr, &Context.mvpMemory)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to allocate memory with error: " + std::to_string(Error));
+    }
+
+    if((Error = vkBindBufferMemory(Context.Device, Context.mvpBuffer, Context.mvpMemory, 0)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to bind memory to mvp buffer with error: " + std::to_string(Error));
+    }
+  }
+
+  {
+    void* TransferMemory;
+    vkMapMemory(Context.Device, Context.TransitMemory, 0, 512000, 0, &TransferMemory);
+
+    memcpy((glm::mat4*)TransferMemory, &MVP.World, sizeof(glm::mat4));
+    memcpy((glm::mat4*)TransferMemory+1, &MVP.View, sizeof(glm::mat4));
+    memcpy((glm::mat4*)TransferMemory+2, &MVP.Proj, sizeof(glm::mat4));
+
+    VkBufferCopy Transfer;
+    Transfer.size = sizeof(MVP);
+    Transfer.srcOffset = 0;
+    Transfer.dstOffset = 0;
+
+    VkCommandBufferBeginInfo BeginInfo{};
+    BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
+      vkCmdCopyBuffer(Context.MemoryCmd, Context.TransitBuffer, Context.mvpBuffer, 1, &Transfer);
+    vkEndCommandBuffer(Context.MemoryCmd);
+
+    VkSubmitInfo SubmitInfo{};
+    SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    SubmitInfo.commandBufferCount = 1;
+    SubmitInfo.pCommandBuffers = &Context.MemoryCmd;
+
+    vkQueueSubmit(Context.GraphicsQueue, 1, &SubmitInfo, Context.MemoryFence);
+
+    VkWriteDescriptorSet mvpWrite{};
+    mvpWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+
+    mvpWrite.descriptorCount = 1;
+    mvpWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+    mvpWrite.dstBinding = 0;
+    mvpWrite.dstSet = Context.DescSet;
+
+    VkDescriptorBufferInfo BuffInfo{};
+    BuffInfo.range = sizeof(MVP);
+    BuffInfo.buffer = Context.mvpBuffer;
+    BuffInfo.offset = 0;
+
+    mvpWrite.pBufferInfo = &BuffInfo;
+
+    vkWaitForFences(Context.Device, 1, &Context.MemoryFence, VK_TRUE, UINT64_MAX);
+
+    vkUpdateDescriptorSets(Context.Device, 1, &mvpWrite, 0, nullptr);
   }
 }
 
@@ -1149,12 +1415,13 @@ void RecordRender()
         VkDeviceSize Offset = 0;
 
         // Bind the Mesh information and pipeline.
-        vkCmdBindVertexBuffers(Context.RenderBuffers[i], 0, 1, &Context.TriangleVertexBuffer, &Offset);
-        vkCmdBindIndexBuffer(Context.RenderBuffers[i], Context.TriangleIndexBuffer, Offset, VK_INDEX_TYPE_UINT32);
+        vkCmdBindVertexBuffers(Context.RenderBuffers[i], 0, 1, &Context.MeshVertexBuffer, &Offset);
+        vkCmdBindIndexBuffer(Context.RenderBuffers[i], Context.MeshIndexBuffer, Offset, VK_INDEX_TYPE_UINT32);
+        vkCmdBindDescriptorSets(Context.RenderBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, Context.PipelineLayout, 0, 1, &Context.DescSet, 0, nullptr);
         vkCmdBindPipeline(Context.RenderBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, Context.Pipeline);
 
         // Draw the mesh
-        vkCmdDrawIndexed(Context.RenderBuffers[i], 3/*as specified in Triangle's struct definition*/, 1, 0, 0, 0);
+        vkCmdDrawIndexed(Context.RenderBuffers[i], Mesh.Indices.size()/*as specified in Triangle's struct definition*/, 1, 0, 0, 0);
 
       vkCmdEndRenderPass(Context.RenderBuffers[i]);
 
@@ -1212,11 +1479,18 @@ void Cleanup()
   vkDestroyBuffer(Context.Device, Context.TransitBuffer, nullptr);
   vkFreeMemory(Context.Device, Context.TransitMemory, nullptr);
 
-  vkDestroyBuffer(Context.Device, Context.TriangleVertexBuffer, nullptr);
-  vkFreeMemory(Context.Device, Context.TriangleVertexMemory, nullptr);
+  vkDestroyBuffer(Context.Device, Context.MeshVertexBuffer, nullptr);
+  vkFreeMemory(Context.Device, Context.MeshVertexMemory, nullptr);
 
-  vkDestroyBuffer(Context.Device, Context.TriangleIndexBuffer, nullptr);
-  vkFreeMemory(Context.Device, Context.TriangleIndexMemory, nullptr);
+  vkDestroyBuffer(Context.Device, Context.MeshIndexBuffer, nullptr);
+  vkFreeMemory(Context.Device, Context.MeshIndexMemory, nullptr);
+
+  vkDestroyBuffer(Context.Device, Context.mvpBuffer, nullptr);
+  vkFreeMemory(Context.Device, Context.mvpMemory, nullptr);
+
+  // This will destroy all descriptor sets allocated as well
+  vkDestroyDescriptorPool(Context.Device, Context.DescPool, nullptr);
+  vkDestroyDescriptorSetLayout(Context.Device, Context.DescLayout, nullptr);
 
   vkDestroyPipeline(Context.Device, Context.Pipeline, nullptr);
   vkDestroyPipelineLayout(Context.Device, Context.PipelineLayout, nullptr);

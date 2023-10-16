@@ -150,15 +150,54 @@ void Cleanup();
   // Present
 
 
-
+// Heads up, classes aren't packed like structs, so things might get messy if you try to define the Vertetx as a class instead of a struct.
+struct Vertex
+{
+  glm::vec2 vPos;
+  glm::vec3 vColor;
+};
 
 struct
 {
-  glm::vec2 Vertices[3] = {glm::vec2{0.5f, 0.5f}, glm::vec2{-0.5f, 0.5f}, glm::vec2{0.f, -0.5f}};
+  Vertex Vertices[3] = 
+  {
+    {glm::vec2{0.5f, 0.5f}, glm::vec3(1.f, 0.f, 0.f)},
+    {glm::vec2{-0.5f, 0.5f}, glm::vec3{0.f, 1.f, 0.f}},
+    {glm::vec2{0.f, -0.5f}, glm::vec3{0.f, 0.f, 1.f}}
+  };
 
   uint32_t Indices[3] = {2, 1, 0};
 
 } TriangleMesh;
+
+/* we will now put our vertex input description's bindings/attributes so we can see the changes better */
+std::vector<VkVertexInputBindingDescription> GetBindingDescription()
+{
+  std::vector<VkVertexInputBindingDescription> Ret(1);
+
+  Ret[0].stride = sizeof(Vertex);
+  Ret[0].binding = 0;
+  Ret[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  return Ret;
+}
+
+std::vector<VkVertexInputAttributeDescription> GetAttributeDescription()
+{
+  std::vector<VkVertexInputAttributeDescription> Ret(2);
+
+  Ret[0].binding = 0;
+  Ret[0].format = VK_FORMAT_R32G32_SFLOAT;
+  Ret[0].location = 0;
+  Ret[0].offset = offsetof(Vertex, vPos);
+
+  Ret[1].binding = 0;
+  Ret[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  Ret[1].location = 1;
+  Ret[1].offset = offsetof(Vertex, vColor);
+
+  return Ret;
+}
 
 int main()
 {
@@ -798,27 +837,19 @@ void InitPipeline()
   }
 
   VkPipelineVertexInputStateCreateInfo VertexInput{};
-    VkVertexInputAttributeDescription VertexAttribute{};
-    VkVertexInputBindingDescription VertexBinding{};
+    std::vector<VkVertexInputAttributeDescription> VertexAttribute;
+    std::vector<VkVertexInputBindingDescription> VertexBinding;
 
-  // Vertex input for shaders.
+  // Setup Vertex Input
   {
-    VertexBinding.stride = sizeof(glm::vec2);
-    VertexBinding.binding = 0;
-    VertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VertexAttribute.binding = 0;
-    VertexAttribute.location = 0;
-    VertexAttribute.format = VK_FORMAT_R32G32_SFLOAT;
-    VertexAttribute.offset = 0;
+    VertexAttribute = GetAttributeDescription();
+    VertexBinding = GetBindingDescription();
 
     VertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-    VertexInput.vertexBindingDescriptionCount = 1;
-    VertexInput.pVertexBindingDescriptions = &VertexBinding;
-
-    VertexInput.vertexAttributeDescriptionCount = 1;
-    VertexInput.pVertexAttributeDescriptions = &VertexAttribute;
+    VertexInput.vertexBindingDescriptionCount = VertexBinding.size();
+    VertexInput.vertexAttributeDescriptionCount = VertexAttribute.size();
+    VertexInput.pVertexBindingDescriptions = VertexBinding.data();
+    VertexInput.pVertexAttributeDescriptions = VertexAttribute.data();
   }
 
   VkPipelineDepthStencilStateCreateInfo DepthState{};
@@ -933,7 +964,7 @@ void InitMesh()
   {
     VkBufferCreateInfo vBufferInfo{};
     vBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    vBufferInfo.size = sizeof(glm::vec2) * 3;
+    vBufferInfo.size = sizeof(Vertex)*3;
     vBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     vBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -1005,7 +1036,7 @@ void InitMesh()
 
   // Fill Transit Buffer with Vertices
   {
-    memcpy((glm::vec2*)TransitMemory, TriangleMesh.Vertices, sizeof(glm::vec2)*3);
+    memcpy((Vertex*)TransitMemory, TriangleMesh.Vertices, sizeof(Vertex)*3);
   }
 
   // Transfer Vertices from Transit to Vertex Buffer
@@ -1014,7 +1045,7 @@ void InitMesh()
     BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkBufferCopy CopyInfo{};
-    CopyInfo.size = sizeof(glm::vec2) * 3;
+    CopyInfo.size = sizeof(Vertex) * 3;
     CopyInfo.srcOffset = 0;
     CopyInfo.dstOffset = 0;
 
