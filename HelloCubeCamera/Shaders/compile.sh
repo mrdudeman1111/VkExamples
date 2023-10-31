@@ -1,2 +1,2 @@
-glslc Shader.vert -o ../build/Vert.spv
-glslc Shader.frag -o ../build/Frag.spv
+glslc Shader.vert -o ../../build/HelloCubeCamera/Vert.spv
+glslc Shader.frag -o ../../build/HelloCubeCamera/Frag.spv

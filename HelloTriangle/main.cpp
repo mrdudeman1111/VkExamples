@@ -951,8 +951,6 @@ void InitMesh()
     vAllocInfo.allocationSize = vMemReq.size;
     vAllocInfo.memoryTypeIndex = Context.Memory.Local;
 
-    if(vMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Vertex buffer supports Local\n";
-
     if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.TriangleVertexMemory)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to allocate Triangle Vertex memory with error: " + std::to_string(Error));
@@ -985,8 +983,6 @@ void InitMesh()
     iAllocInfo.pNext = nullptr;
     iAllocInfo.allocationSize = iMemReq.size;
     iAllocInfo.memoryTypeIndex = Context.Memory.Local;
-
-    if(iMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Index buffer supports Local\n";
 
     if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.TriangleIndexMemory)) != VK_SUCCESS)
     {

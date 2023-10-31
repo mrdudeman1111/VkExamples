@@ -1,2 +1,2 @@
-glslc Shader.frag -o ../build/Frag.spv
-glslc Shader.vert -o ../build/Vert.spv
+glslc Shader.frag -o ../../build/HelloTriangle/Frag.spv
+glslc Shader.vert -o ../../build/HelloTriangle/Vert.spv

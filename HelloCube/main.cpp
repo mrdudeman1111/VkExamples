@@ -984,7 +984,7 @@ void InitPipeline()
 void InitMesh()
 {
   // Load Mesh file
-  const aiScene* pScene = Context.Importer.ReadFile("Mesh.dae", aiProcess_Triangulate);
+  const aiScene* pScene = Context.Importer.ReadFile("CubeMesh.dae", aiProcess_Triangulate);
 
   // check for meshes, if none, then throw error
   if(pScene->HasMeshes())
@@ -1100,8 +1100,6 @@ void InitMesh()
     vAllocInfo.allocationSize = vMemReq.size;
     vAllocInfo.memoryTypeIndex = Context.Memory.Local;
 
-    if(vMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Vertex buffer supports Local\n";
-
     if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.MeshVertexMemory)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to allocate Triangle Vertex memory with error: " + std::to_string(Error));
@@ -1134,8 +1132,6 @@ void InitMesh()
     iAllocInfo.pNext = nullptr;
     iAllocInfo.allocationSize = iMemReq.size;
     iAllocInfo.memoryTypeIndex = Context.Memory.Local;
-
-    if(iMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Index buffer supports Local\n";
 
     if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.MeshIndexMemory)) != VK_SUCCESS)
     {
@@ -1266,7 +1262,7 @@ void InitDescriptors()
     VkBufferCreateInfo BufferCI{};
     BufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     BufferCI.size = sizeof(MVP);
-    BufferCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    BufferCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     BufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if((Error = vkCreateBuffer(Context.Device, &BufferCI, nullptr, &Context.mvpBuffer)) != VK_SUCCESS)

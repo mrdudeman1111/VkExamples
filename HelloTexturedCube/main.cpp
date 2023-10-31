@@ -1,13 +1,7 @@
-#include <assimp/importerdesc.h>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/vector_float3.hpp>
-#include <glm/geometric.hpp>
-#include <glm/matrix.hpp>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -15,12 +9,13 @@
 #include <string>
 #include <vector>
 
-#include <vulkan/vulkan_core.h>
-
 #include <assimp/mesh.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/importerdesc.h>
+#include <assimp/material.h>
+#include <vulkan/vulkan_core.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -29,6 +24,15 @@
 #include <glm/glm.hpp>
 #include <glm/fwd.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
+
+#include <sail/sail.h>
+#include <sail-common/sail-common.h>
+#include <sail-manip/sail-manip.h>
 
 #ifndef NDEBUG
   std::vector<const char*> InstLayers = {"VK_LAYER_KHRONOS_validation"}; // VK_LAYER_KHRONOS_VALIDATION so we can get debug info in CLI
@@ -78,6 +82,10 @@ struct
   std::vector<VkImageView> SwapchainImageViews;
   std::vector<VkFramebuffer> FrameBuffers;
 
+  std::vector<VkDeviceMemory> DepthMemory;
+  std::vector<VkImage> DepthImages;
+  std::vector<VkImageView> DepthImageViews;
+
   VkRenderPass Renderpass;
 
   VkCommandPool GraphicsPool;
@@ -125,11 +133,13 @@ struct
     - RenderSemaphore: Wait for the image to be rendered.
   */
 
-  // Descriptor Pool for our WVP Buffer
+  // Descriptor Pool for our WVP Buffer and Sampler image
   VkDescriptorPool DescPool;
 
   // WVP Layout
   VkDescriptorSetLayout DescLayout;
+  // Sampler layout
+  VkDescriptorSetLayout SamplerLayout;
 
   // WVP Set
   VkDescriptorSet DescSet;
@@ -156,6 +166,7 @@ void InitPipeline();
 void InitMesh();
 void InitDescriptorPool();
 void InitDescriptors();
+void InitSamplers();
 void InitSync();
 
 void SubmitRender(uint32_t RenderIndex);
@@ -163,6 +174,9 @@ void Present(uint32_t RenderIndex);
 
 void UpdateDescriptors();
 void RecordRender(uint32_t ImageIndex);
+
+void CreateImage(VkImage* Image, VkDeviceMemory* Memory, VkFormat Format, VkImageLayout ImageLayout, VkImageUsageFlags Flags);
+void CreateImageView(VkImage* Image, VkImageView* View, VkFormat Format, VkImageLayout ImageLayout, VkImageUsageFlags Usage);
 
 void Cleanup();
 
@@ -211,6 +225,7 @@ class Camera
       */
 
       // Find The Change in mouse position.
+      if(WindowFocused)
       {
         double X, Y;
         glfwGetCursorPos(Context.Window, &X, &Y);
@@ -235,53 +250,60 @@ class Camera
 
       float MovementModifier;
 
-      if(glfwGetKey(Context.Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+      // calculate keyboard inputs.
       {
-        MovementModifier = 2.f;
-      }
-      else
-      {
-        MovementModifier = 1.f;
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_W) == GLFW_PRESS)
-      {
-        Position += (ForwardVector*MoveSpeed*MovementModifier);
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_S) == GLFW_PRESS)
-      {
-        Position += (ForwardVector*MoveSpeed*MovementModifier*-1.f);
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_D) == GLFW_PRESS)
-      {
-        Position += (RightVector*MoveSpeed*MovementModifier);
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_A) == GLFW_PRESS)
-      {
-        Position += (RightVector*MoveSpeed*MovementModifier*-1.f);
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_E) == GLFW_PRESS)
-      {
-        Position += (UpVector*MoveSpeed*MovementModifier);
-      }
-      if(glfwGetKey(Context.Window, GLFW_KEY_Q) == GLFW_PRESS)
-      {
-        Position += (UpVector*MoveSpeed*MovementModifier*-1.f);
+        if(glfwGetKey(Context.Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        {
+          MovementModifier = 2.f;
+        }
+        else
+        {
+          MovementModifier = 1.f;
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_W) == GLFW_PRESS)
+        {
+          Position += (ForwardVector*MoveSpeed*MovementModifier);
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_S) == GLFW_PRESS)
+        {
+          Position += (ForwardVector*MoveSpeed*MovementModifier*-1.f);
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_D) == GLFW_PRESS)
+        {
+          Position += (RightVector*MoveSpeed*MovementModifier);
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_A) == GLFW_PRESS)
+        {
+          Position += (RightVector*MoveSpeed*MovementModifier*-1.f);
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_E) == GLFW_PRESS)
+        {
+          Position += (UpVector*MoveSpeed*MovementModifier);
+        }
+        if(glfwGetKey(Context.Window, GLFW_KEY_Q) == GLFW_PRESS)
+        {
+          Position += (UpVector*MoveSpeed*MovementModifier*-1.f);
+        }
       }
 
+      // Translate Camera Matrix based on glm::vec3 Position
       CameraMatrix = glm::translate(glm::mat4(1.f), Position);
 
-      glm::vec3 LookRightVector = glm::vec3(CameraMatrix[0][0], CameraMatrix[0][1], CameraMatrix[0][2]);
-      glm::vec3 LookUpVector = glm::vec3(0.f, 1.f, 0.f);
-      glm::vec3 LookForwardVector = (-1.f*glm::vec3(CameraMatrix[2][0], CameraMatrix[2][1], CameraMatrix[2][2]));
+      // Rotate Camera Matrix based on glm::vec3 Rotation
+      {
+        glm::vec3 LookRightVector = glm::vec3(CameraMatrix[0][0], CameraMatrix[0][1], CameraMatrix[0][2]);
+        glm::vec3 LookUpVector = glm::vec3(0.f, 1.f, 0.f);
+        glm::vec3 LookForwardVector = (-1.f*glm::vec3(CameraMatrix[2][0], CameraMatrix[2][1], CameraMatrix[2][2]));
 
-      // The Rotation axis is the global Y
-      CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.y), LookUpVector);
+        // The Rotation axis is the global Y
+        CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.y), LookUpVector);
 
-      CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.x), LookRightVector);
+        CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.x), LookRightVector);
 
-      CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.z), LookForwardVector);
+        CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.z), LookForwardVector);
 
-      Matrices.View = glm::inverse(CameraMatrix);
+        Matrices.View = glm::inverse(CameraMatrix);
+      }
 
       if(glfwGetKey(Context.Window, GLFW_KEY_TAB) == GLFW_PRESS)
       {
@@ -315,14 +337,24 @@ class Camera
 // Heads up, classes aren't packed like structs, so things might get messy if you try to define the Vertetx as a class instead of a struct.
 struct Vertex
 {
-  glm::vec3 vPos;
-  glm::vec3 vColor;
+  public:
+    glm::vec3 vPos;
+    glm::vec3 vColor;
+    glm::vec2 vCoord;
 };
 
 struct
 {
-  std::vector<Vertex> Vertices;
-  std::vector<uint32_t> Indices;
+  public:
+    std::vector<Vertex> Vertices;
+    std::vector<uint32_t> Indices;
+
+    VkImage Texture_Albedo;
+    VkImageView View_Albedo;
+    VkDeviceMemory Memory_Albedo;
+
+    VkSampler Sampler_Albedo;
+    VkDescriptorSet TextureDescriptor;
 } Mesh;
 
 /* we will now put our vertex input description's bindings/attributes so we can see the changes better */
@@ -339,7 +371,7 @@ std::vector<VkVertexInputBindingDescription> GetBindingDescription()
 
 std::vector<VkVertexInputAttributeDescription> GetAttributeDescription()
 {
-  std::vector<VkVertexInputAttributeDescription> Ret(2);
+  std::vector<VkVertexInputAttributeDescription> Ret(3);
 
   Ret[0].binding = 0;
   Ret[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -351,8 +383,129 @@ std::vector<VkVertexInputAttributeDescription> GetAttributeDescription()
   Ret[1].location = 1;
   Ret[1].offset = offsetof(Vertex, vColor);
 
+  Ret[2].binding = 0;
+  Ret[2].format = VK_FORMAT_R32G32_SFLOAT;
+  Ret[2].location = 2;
+  Ret[2].offset = offsetof(Vertex, vCoord);
+
   return Ret;
 }
+
+// Helper Functions
+void CreateImage(VkImage* Image, VkDeviceMemory* Memory, VkExtent2D Resolution, VkFormat Format, VkImageLayout ImageLayout, VkImageUsageFlags Usage)
+{
+  VkImageCreateInfo ImageCI{};
+  ImageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  ImageCI.extent = VkExtent3D{Resolution.width, Resolution.height, 1};
+  ImageCI.format = Format;
+  ImageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+  ImageCI.usage = Usage;
+  ImageCI.imageType = VK_IMAGE_TYPE_2D;
+  ImageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+  ImageCI.mipLevels = 1;
+  ImageCI.arrayLayers = 1;
+  ImageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  ImageCI.initialLayout = ImageLayout;
+
+  if((Error = vkCreateImage(Context.Device, &ImageCI, nullptr, Image)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to create image with error: " + std::to_string(Error));
+  }
+
+  VkMemoryRequirements MemReq;
+  vkGetImageMemoryRequirements(Context.Device, *Image, &MemReq);
+
+  VkMemoryAllocateInfo AllocInfo{};
+  AllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  AllocInfo.allocationSize = MemReq.size;
+  AllocInfo.memoryTypeIndex = Context.Memory.Local;
+
+
+  if((Error = vkAllocateMemory(Context.Device, &AllocInfo, nullptr, Memory)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to allocate image error: " + std::to_string(Error));
+  }
+
+  if((Error = vkBindImageMemory(Context.Device, *Image, *Memory, 0)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to bind image memory with error: " + std::to_string(Error));
+  }
+}
+
+void CreateImageView(VkImage* Image, VkImageView* View, VkFormat Format, VkImageAspectFlags Aspects)
+{
+  VkImageViewCreateInfo ViewCI{};
+  ViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  ViewCI.format = Format;
+  ViewCI.image = *Image;
+
+  ViewCI.subresourceRange.levelCount = 1;
+  ViewCI.subresourceRange.layerCount = 1;
+
+  ViewCI.subresourceRange.aspectMask = Aspects;
+
+  ViewCI.subresourceRange.baseArrayLayer = 0;
+  ViewCI.subresourceRange.baseMipLevel = 0;
+
+  ViewCI.components.r = VK_COMPONENT_SWIZZLE_R;
+  ViewCI.components.g = VK_COMPONENT_SWIZZLE_G;
+  ViewCI.components.b = VK_COMPONENT_SWIZZLE_B;
+  ViewCI.components.a = VK_COMPONENT_SWIZZLE_A;
+
+  ViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+  if((vkCreateImageView(Context.Device, &ViewCI, nullptr, View)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to create image view with error: " + std::to_string(Error));
+  }
+}
+
+void CopyBuffer(VkBuffer* Src, VkBuffer* Dst, VkBufferCopy* CopyInfo)
+{
+  VkCommandBufferBeginInfo BeginInfo{};
+  BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+  vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
+    vkCmdCopyBuffer(Context.MemoryCmd, *Src, *Dst, 1, CopyInfo);
+  vkEndCommandBuffer(Context.MemoryCmd);
+
+  VkSubmitInfo SubmitInfo{};
+  SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  SubmitInfo.commandBufferCount = 1;
+  SubmitInfo.pCommandBuffers = &Context.MemoryCmd;
+
+  if((Error = vkQueueSubmit(Context.GraphicsQueue,  1, &SubmitInfo, Context.MemoryFence)) == VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to submit Buffer to Buffer copy with error: " + std::to_string(Error));
+  }
+}
+
+/*
+ * in VkBuffer* Src  Pointer to source buffer, should be TransitBuffer
+ * in VkImage* Dst   Pointer to destination Image
+ * in VkImageLayout Layout  Layout of destination image
+ * in VkBufferImageCopy CopyInfo  Struct specifying memory ranges to copy
+*/
+void CopyBufferImage(VkBuffer* Src, VkImage* Dst, VkImageLayout Layout, VkBufferImageCopy CopyInfo)
+{
+  VkCommandBufferBeginInfo BeginInfo{};
+  BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+  vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
+    vkCmdCopyBufferToImage(Context.MemoryCmd, *Src, *Dst, Layout, 1, &CopyInfo);
+  vkEndCommandBuffer(Context.MemoryCmd);
+
+  VkSubmitInfo SubmitInfo{};
+  SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  SubmitInfo.commandBufferCount = 1;
+  SubmitInfo.pCommandBuffers = &Context.MemoryCmd;
+
+  if((Error = vkQueueSubmit(Context.GraphicsQueue, 1, &SubmitInfo, Context.MemoryFence)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to submit Buffer to Image copy with error: " + std::to_string(Error));
+  }
+}
+
 
 int main()
 {
@@ -389,25 +542,41 @@ int main()
   // Create Swapchain
   InitSwapchain(WindowSize);
 
+  // Create primary renderpass
+  // with one subpass for mesh rendering
   InitRenderpass();
 
+  // Init frambuffer with color attachment (screen)
+  // and depth attachment (depth stencil for facial culling)
   InitFrameBuffer();
 
+  // Init Command pool for GPU processes like copies and rendering
   InitCommandPool();
 
+  // Init Command Buffers for memory operations and rendering operations
   InitCommandBuffer();
 
+  // Read and create shaders for pipeline
   InitShaders();
 
+  // create main pipeline with shaders from before
   InitPipeline();
 
+  // Create structures needed for execution synchronization
+  // so that we have memory safety
   InitSync();
 
+  // Initiate mesh vertices, indices, colors, coordinates, and textures.
   InitMesh();
 
+  // Initiate descriptor pool for passing buffers and textures to shaders.
   InitDescriptorPool();
 
+  // initiate descriptors for buffers, like the camera buffer
   InitDescriptors();
+
+  // Initiate descriptors for Textures, like the Mesh Albedo texture
+  InitSamplers();
 
   uint32_t ImageIndex;
 
@@ -700,6 +869,8 @@ void InitRenderpass()
 
   VkAttachmentDescription ColorDescription{};
   VkAttachmentReference ColorReference{};
+  VkAttachmentDescription DepthDescription{};
+  VkAttachmentReference DepthReference{};
 
   // Color Description
   {
@@ -725,12 +896,35 @@ void InitRenderpass()
     ColorReference.attachment = 0;
   }
 
+  // Depth Description
+  {
+    DepthDescription.format = VK_FORMAT_D32_SFLOAT;
+    DepthDescription.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    DepthDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    DepthDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    DepthDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    DepthDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+    DepthDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  }
+
+  // Depth Reference
+  {
+    DepthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    DepthReference.attachment = 1;
+  }
+
+  VkAttachmentDescription Descriptions[] = {ColorDescription, DepthDescription};
+
   // Create Subpass and Renderpass
   {
     VkSubpassDescription SubpassDescription{};
     SubpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     SubpassDescription.colorAttachmentCount = 1;
     SubpassDescription.pColorAttachments = &ColorReference;
+    SubpassDescription.pDepthStencilAttachment = &DepthReference;
 
     VkRenderPassCreateInfo RPInfo{};
     RPInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -738,8 +932,8 @@ void InitRenderpass()
     RPInfo.subpassCount = 1;
     RPInfo.pSubpasses = &SubpassDescription;
 
-    RPInfo.attachmentCount = 1;
-    RPInfo.pAttachments = &ColorDescription;
+    RPInfo.attachmentCount = 2;
+    RPInfo.pAttachments = Descriptions;
 
     if((Error = vkCreateRenderPass(Context.Device, &RPInfo, nullptr, &Context.Renderpass)) != VK_SUCCESS)
     {
@@ -754,9 +948,73 @@ void InitFrameBuffer()
   {
     Context.SwapchainImageViews.resize(Context.SwapchainImages.size());
 
+    Context.DepthImages.resize(Context.SwapchainImages.size());
+    Context.DepthImageViews.resize(Context.SwapchainImages.size());
+    Context.DepthMemory.resize(Context.SwapchainImageViews.size());
+
     // Create the Image view for our Swapchain Image
     for(uint32_t i = 0; i < Context.FrameBufferCount; i++)
     {
+      {
+        VkImageCreateInfo DepthCI{};
+        DepthCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        DepthCI.format = VK_FORMAT_D32_SFLOAT;
+        DepthCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        DepthCI.extent = VkExtent3D{Context.WindowExtent.width, Context.WindowExtent.height, 1};
+        DepthCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+        DepthCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        DepthCI.imageType = VK_IMAGE_TYPE_2D;
+        DepthCI.arrayLayers = 1;
+        DepthCI.mipLevels = 1;
+        DepthCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        DepthCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if((Error = vkCreateImage(Context.Device, &DepthCI, nullptr, &Context.DepthImages[i])) != VK_SUCCESS)
+        {
+          throw std::runtime_error("Failed to create an Depth image with error: " + std::to_string(Error));
+        }
+
+        VkMemoryRequirements DepthMemReq;
+        vkGetImageMemoryRequirements(Context.Device, Context.DepthImages[i], &DepthMemReq);
+
+        VkMemoryAllocateInfo DepthAllocInfo{};
+        DepthAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        DepthAllocInfo.allocationSize = DepthMemReq.size;
+        DepthAllocInfo.memoryTypeIndex = Context.Memory.Local;
+
+        if((Error = vkAllocateMemory(Context.Device, &DepthAllocInfo, nullptr, &Context.DepthMemory[i])) != VK_SUCCESS)
+        {
+          throw std::runtime_error("Failed to allocate depth memory with error: " + std::to_string(Error));
+        }
+
+        if((Error = vkBindImageMemory(Context.Device, Context.DepthImages[i], Context.DepthMemory[i], 0)) != VK_SUCCESS)
+        {
+          throw std::runtime_error("Failed to bind depth image memory with error: " + std::to_string(Error));
+        }
+      }
+
+      VkImageViewCreateInfo DepthViewCI{};
+      DepthViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      DepthViewCI.format = VK_FORMAT_D32_SFLOAT;
+      DepthViewCI.image = Context.DepthImages[i];
+      DepthViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+      DepthViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+      DepthViewCI.subresourceRange.layerCount = 1;
+      DepthViewCI.subresourceRange.levelCount = 1;
+      DepthViewCI.subresourceRange.baseMipLevel = 0;
+      DepthViewCI.subresourceRange.baseArrayLayer = 0;
+
+      DepthViewCI.components.r = VK_COMPONENT_SWIZZLE_R;
+      DepthViewCI.components.g = VK_COMPONENT_SWIZZLE_G;
+      DepthViewCI.components.b = VK_COMPONENT_SWIZZLE_B;
+      DepthViewCI.components.a = VK_COMPONENT_SWIZZLE_A;
+
+      if((Error = vkCreateImageView(Context.Device, &DepthViewCI, nullptr, &Context.DepthImageViews[i])) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to create depth image view with error: " + std::to_string(Error));
+      }
+
       VkImageViewCreateInfo ViewInfo{};
       ViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
       ViewInfo.format = Context.SurfaceFormat.format;
@@ -785,17 +1043,15 @@ void InitFrameBuffer()
     // Resize the Frame buffer array in preperation for creation.
     Context.FrameBuffers.resize(Context.FrameBufferCount);
 
-    // We assign AttachmentCount to the number of Image Views associated each frame buffer.
-    // To do this we need to take the total number of images and divide it by the number of framebuffers we have.
-    uint32_t AttachmentCount = Context.SwapchainImageViews.size()/Context.FrameBufferCount;
-
     for(uint32_t i = 0; i < Context.FrameBufferCount; i++)
     {
+      VkImageView ImageViews[] = {Context.SwapchainImageViews[i], Context.DepthImageViews[i]};
+
       VkFramebufferCreateInfo FBInfo{};
       FBInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 
-      FBInfo.attachmentCount = AttachmentCount;
-      FBInfo.pAttachments = &Context.SwapchainImageViews[AttachmentCount*i];
+      FBInfo.attachmentCount = 2;
+      FBInfo.pAttachments = ImageViews;
 
       FBInfo.renderPass = Context.Renderpass;
 
@@ -917,19 +1173,20 @@ void InitShaders()
 
 void InitPipeline()
 {
-  VkDescriptorSetLayoutBinding Binding{};
+  VkDescriptorSetLayoutBinding UniformBinding{};
 
-  // setup descriptor bindin for the MVP
+  // setup descriptor binding for the MVP and albedo sampler
   {
-    Binding.descriptorCount = 1;
-    Binding.binding = 0;
-    Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    VkDescriptorSetLayoutBinding UniformBinding{};
+    UniformBinding.descriptorCount = 1;
+    UniformBinding.binding = 0;
+    UniformBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    UniformBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
     VkDescriptorSetLayoutCreateInfo LayoutCI{};
     LayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     LayoutCI.bindingCount = 1;
-    LayoutCI.pBindings = &Binding;
+    LayoutCI.pBindings = &UniformBinding;
 
     if((Error = vkCreateDescriptorSetLayout(Context.Device, &LayoutCI, nullptr, &Context.DescLayout)) != VK_SUCCESS)
     {
@@ -937,12 +1194,33 @@ void InitPipeline()
     }
   }
 
+  // Setup descriptor binding for the Sampler
+  {
+    VkDescriptorSetLayoutBinding ImageBinding{};
+    ImageBinding.descriptorCount = 1;
+    ImageBinding.binding = 0;
+    ImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    ImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+    VkDescriptorSetLayoutCreateInfo LayoutCI{};
+    LayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    LayoutCI.bindingCount = 1;
+    LayoutCI.pBindings = &ImageBinding;
+
+    if((Error = vkCreateDescriptorSetLayout(Context.Device, &LayoutCI, nullptr, &Context.SamplerLayout)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create descriptor pool with error: " + std::to_string(Error));
+    }
+  }
+
+  VkDescriptorSetLayout Layouts[] = {Context.DescLayout, Context.SamplerLayout};
+
   // Create the pipeline layout
   {
     VkPipelineLayoutCreateInfo PipeLayoutInfo{};
     PipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    PipeLayoutInfo.setLayoutCount = 1;
-    PipeLayoutInfo.pSetLayouts = &Context.DescLayout;
+    PipeLayoutInfo.setLayoutCount = 2;
+    PipeLayoutInfo.pSetLayouts = Layouts;
     PipeLayoutInfo.pushConstantRangeCount = 0;
     PipeLayoutInfo.pPushConstantRanges = nullptr;
 
@@ -1042,18 +1320,16 @@ void InitPipeline()
   VkPipelineDepthStencilStateCreateInfo DepthState{};
 
   // Depth stencil testing
-  /*
-    {
-      DepthState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-      DepthState.depthCompareOp = VK_COMPARE_OP_GREATER;
-      DepthState.minDepthBounds = 0.f;
-      DepthState.maxDepthBounds = 1.f;
-      DepthState.depthTestEnable = VK_TRUE;
-      DepthState.depthWriteEnable = VK_FALSE;
-      DepthState.stencilTestEnable = VK_TRUE;
-      DepthState.depthBoundsTestEnable = VK_FALSE;
-    }
-  */
+  {
+    DepthState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    DepthState.depthCompareOp = VK_COMPARE_OP_GREATER;
+    DepthState.minDepthBounds = 0.f;
+    DepthState.maxDepthBounds = 1.f;
+    DepthState.depthTestEnable = VK_TRUE;
+    DepthState.depthWriteEnable = VK_FALSE;
+    DepthState.stencilTestEnable = VK_TRUE;
+    DepthState.depthBoundsTestEnable = VK_FALSE;
+  }
 
   VkPipelineRasterizationStateCreateInfo RasterState{};
 
@@ -1095,7 +1371,7 @@ void InitPipeline()
     PipelineCI.pViewportState = &PipelineViewport;
     PipelineCI.pColorBlendState = &ColorBlendState;
     PipelineCI.pVertexInputState = &VertexInput;
-    //PipelineCI.pDepthStencilState = &DepthState;
+    PipelineCI.pDepthStencilState = &DepthState;
     PipelineCI.pRasterizationState = &RasterState;
     PipelineCI.pMultisampleState = &SampleState;
   }
@@ -1108,8 +1384,40 @@ void InitPipeline()
 
 void InitMesh()
 {
+  // Initiate Transfer Buffer
+  {
+    VkBufferCreateInfo tBufferInfo{};
+    tBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    tBufferInfo.size = 512000000; // 512 MB
+    tBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    tBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if((Error = vkCreateBuffer(Context.Device, &tBufferInfo, nullptr, &Context.TransitBuffer)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create transit buffer with error: " + std::to_string(Error));
+    }
+
+    VkMemoryRequirements tMemReq{};
+    vkGetBufferMemoryRequirements(Context.Device, Context.TransitBuffer, &tMemReq);
+
+    VkMemoryAllocateInfo tMemAlloc{};
+    tMemAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    tMemAlloc.allocationSize = tMemReq.size;
+    tMemAlloc.memoryTypeIndex = Context.Memory.Visible;
+
+    if((Error = vkAllocateMemory(Context.Device, &tMemAlloc, nullptr, &Context.TransitMemory)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to allocate memory for transit buffer with error: " + std::to_string(Error));
+    }
+
+    if((Error = vkBindBufferMemory(Context.Device, Context.TransitBuffer, Context.TransitMemory, 0)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to bind transit buffer to transit memory with error: " + std::to_string(Error));
+    }
+  }
+
   // Load Mesh file
-  const aiScene* pScene = Context.Importer.ReadFile("CubeCameraMesh.dae", aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+  const aiScene* pScene = Context.Importer.ReadFile("Mesh.dae", aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
 
   // check for meshes, if none, then throw error
   if(pScene->HasMeshes())
@@ -1120,9 +1428,16 @@ void InitMesh()
     // Fill Vertex array and vertex colors if there are any
     for(uint32_t i = 0; i < pScene->mMeshes[0]->mNumVertices; i++)
     {
-      Mesh.Vertices[i].vPos.y = (pScene->mMeshes[0]->mVertices[i].z);
       Mesh.Vertices[i].vPos.x = pScene->mMeshes[0]->mVertices[i].y;
-      Mesh.Vertices[i].vPos.z = -1*pScene->mMeshes[0]->mVertices[i].x;
+      Mesh.Vertices[i].vPos.y = pScene->mMeshes[0]->mVertices[i].z;
+      Mesh.Vertices[i].vPos.z = -1.f*pScene->mMeshes[0]->mVertices[i].x;
+
+      if(pScene->mMeshes[0]->mTextureCoords[0])
+      {
+        // account for opengl vs vulkan texture coordinates by inverting the y coordinate
+        Mesh.Vertices[i].vCoord.x = pScene->mMeshes[0]->mTextureCoords[0][i].x;
+        Mesh.Vertices[i].vCoord.y = -1*pScene->mMeshes[0]->mTextureCoords[0][i].y;
+      }
 
       if(pScene->mMeshes[0]->HasVertexColors(0))
       {
@@ -1143,6 +1458,158 @@ void InitMesh()
       Mesh.Indices.push_back(pScene->mMeshes[0]->mFaces[i].mIndices[1]);
       Mesh.Indices.push_back(pScene->mMeshes[0]->mFaces[i].mIndices[2]);
     }
+
+    // Load textures
+    {
+      aiString AlbedoPath;
+      pScene->mMaterials[pScene->mMeshes[0]->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &AlbedoPath);
+
+      sail_image *RawImage, *Image;
+      std::cout << AlbedoPath.C_Str() << '\n';
+      sail_load_from_file(AlbedoPath.C_Str(), &RawImage);
+
+      sail_convert_image_with_options(RawImage, SAIL_PIXEL_FORMAT_BPP32_RGBA, NULL, &Image);
+
+      CreateImage(&Mesh.Texture_Albedo, &Mesh.Memory_Albedo, VkExtent2D{Image->width, Image->height}, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+      CreateImageView(&Mesh.Texture_Albedo, &Mesh.View_Albedo, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+
+      // Layout Transition
+      {
+        VkImageMemoryBarrier ImgBarrier{};
+        ImgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        ImgBarrier.image = Mesh.Texture_Albedo;
+        ImgBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ImgBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        ImgBarrier.srcAccessMask = VK_ACCESS_NONE;
+        ImgBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        ImgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        ImgBarrier.subresourceRange.layerCount = 1;
+        ImgBarrier.subresourceRange.levelCount = 1;
+        ImgBarrier.subresourceRange.baseMipLevel = 0;
+        ImgBarrier.subresourceRange.baseArrayLayer = 0;
+
+        VkCommandBufferBeginInfo BeginInfo{};
+        BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+          vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
+            vkCmdPipelineBarrier(Context.MemoryCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ImgBarrier);
+          vkEndCommandBuffer(Context.MemoryCmd);
+
+        VkSubmitInfo SubmitInfo{};
+        SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        SubmitInfo.commandBufferCount = 1;
+        SubmitInfo.pCommandBuffers = &Context.MemoryCmd;
+
+        vkQueueSubmit(Context.GraphicsQueue, 1, &SubmitInfo, Context.MemoryFence);
+
+        vkWaitForFences(Context.Device, 1, &Context.MemoryFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(Context.Device, 1, &Context.MemoryFence);
+      }
+
+      // Copy buffer to image
+      {
+        void* pTransit;
+        vkMapMemory(Context.Device, Context.TransitMemory, 0, 512000000, 0, &pTransit);
+        memcpy((uint32_t*)pTransit, (uint32_t*)Image->pixels, (Image->width*Image->height*sizeof(uint32_t)));
+
+        VkBufferImageCopy CopyInfo{};
+
+        // fill copy info
+        {
+          CopyInfo.imageExtent = {(uint32_t)Image->width, (uint32_t)Image->height, 1};
+          CopyInfo.imageOffset = VkOffset3D{0, 0, 0};
+          CopyInfo.bufferOffset = 0;
+
+          CopyInfo.imageSubresource.layerCount = 1;
+          CopyInfo.imageSubresource.mipLevel = 0;
+          CopyInfo.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+          CopyInfo.imageSubresource.baseArrayLayer = 0;
+        }
+
+        CopyBufferImage(&Context.TransitBuffer, &Mesh.Texture_Albedo, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, CopyInfo);
+
+        vkWaitForFences(Context.Device, 1, &Context.MemoryFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(Context.Device, 1, &Context.MemoryFence);
+      }
+
+      vkUnmapMemory(Context.Device, Context.TransitMemory);
+    }
+
+    // Create vertex buffer
+    {
+      // Define Buffer
+      VkBufferCreateInfo vBufferInfo{};
+      vBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+      vBufferInfo.size = sizeof(Vertex)*Mesh.Vertices.size();
+      vBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      vBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+      // Create buffer
+      if((Error = vkCreateBuffer(Context.Device, &vBufferInfo, nullptr, &Context.MeshVertexBuffer)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to create triangle vertex buffer with error: " + std::to_string(Error));
+      }
+
+      // Get alignment, size, and memory type requirements
+      VkMemoryRequirements vMemReq;
+      vkGetBufferMemoryRequirements(Context.Device, Context.MeshVertexBuffer, &vMemReq);
+
+      // Define memory allocation
+      VkMemoryAllocateInfo vAllocInfo{};
+      vAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+      vAllocInfo.pNext = nullptr;
+      vAllocInfo.allocationSize = vMemReq.size;
+      vAllocInfo.memoryTypeIndex = Context.Memory.Local;
+
+      // Allocate memory
+      if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.MeshVertexMemory)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to allocate Triangle Vertex memory with error: " + std::to_string(Error));
+      }
+
+      // Bind memory
+      if((Error = vkBindBufferMemory(Context.Device, Context.MeshVertexBuffer, Context.MeshVertexMemory, 0)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to bind Triangle vertex buffer to memory with error: " + std::to_string(Error));
+      }
+    }
+
+    // Repeat with Index buffer
+    {
+      VkBufferCreateInfo iBufferInfo{};
+      iBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+      iBufferInfo.size = sizeof(uint32_t) * Mesh.Indices.size();
+      iBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      iBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+      if((Error = vkCreateBuffer(Context.Device, &iBufferInfo, nullptr, &Context.MeshIndexBuffer)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to create Triangle Index buffer with error: " + std::to_string(Error));
+      }
+
+      VkMemoryRequirements iMemReq;
+      vkGetBufferMemoryRequirements(Context.Device, Context.MeshIndexBuffer, &iMemReq);
+
+      VkMemoryAllocateInfo iAllocInfo{};
+      iAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+      iAllocInfo.pNext = nullptr;
+      iAllocInfo.allocationSize = iMemReq.size;
+      iAllocInfo.memoryTypeIndex = Context.Memory.Local;
+
+      if(iMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Index buffer supports Local\n";
+
+      if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.MeshIndexMemory)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to allocate Triangle Index Memory with error: " + std::to_string(Error));
+      }
+
+      if((Error = vkBindBufferMemory(Context.Device, Context.MeshIndexBuffer, Context.MeshIndexMemory, 0)) != VK_SUCCESS)
+      {
+        throw std::runtime_error("Failed to bind Triangle index memory with error: " + std::to_string(Error));
+      }
+    }
+
     std::cout << "Mesh loaded\n";
   }
   else
@@ -1150,118 +1617,9 @@ void InitMesh()
     throw std::runtime_error("Tried to load mesh file with no meshes");
   }
 
-  // Create TransitBuffer
-  {
-    /* Define Buffer */
-    VkBufferCreateInfo tBufferInfo{};
-    tBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    tBufferInfo.size = 512000; // 512KB
-    tBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    tBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    /* Create the buffer */
-    if((Error = vkCreateBuffer(Context.Device, &tBufferInfo, nullptr, &Context.TransitBuffer)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to create transfer buffer with error: " + std::to_string(Error));
-    }
-
-    /* Get memory requirements */
-    VkMemoryRequirements tMemReq;
-    vkGetBufferMemoryRequirements(Context.Device, Context.TransitBuffer, &tMemReq);
-
-    /* Define allocation */
-    VkMemoryAllocateInfo tAllocInfo{};
-    tAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    tAllocInfo.pNext = nullptr;
-    tAllocInfo.allocationSize = tMemReq.size;
-    tAllocInfo.memoryTypeIndex = Context.Memory.Visible;
-
-    /* Allocate memory */
-    if((Error = vkAllocateMemory(Context.Device, &tAllocInfo, nullptr, &Context.TransitMemory)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to allocate transit memory with error: " + std::to_string(Error));
-    }
-
-    /* Bind Buffer to allocated memory */
-    if((Error = vkBindBufferMemory(Context.Device, Context.TransitBuffer, Context.TransitMemory, 0)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to bind trasnit buffer and memory with error: " + std::to_string(Error));
-    }
-  }
-
-  // Repeat with vertex buffer
-  {
-    VkBufferCreateInfo vBufferInfo{};
-    vBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    vBufferInfo.size = sizeof(Vertex)*Mesh.Vertices.size();
-    vBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    vBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if((Error = vkCreateBuffer(Context.Device, &vBufferInfo, nullptr, &Context.MeshVertexBuffer)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to create triangle vertex buffer with error: " + std::to_string(Error));
-    }
-
-    VkMemoryRequirements vMemReq;
-    vkGetBufferMemoryRequirements(Context.Device, Context.MeshVertexBuffer, &vMemReq);
-
-    VkMemoryAllocateInfo vAllocInfo{};
-    vAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    vAllocInfo.pNext = nullptr;
-    vAllocInfo.allocationSize = vMemReq.size;
-    vAllocInfo.memoryTypeIndex = Context.Memory.Local;
-
-    if(vMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Vertex buffer supports Local\n";
-
-    if((Error = vkAllocateMemory(Context.Device, &vAllocInfo, nullptr, &Context.MeshVertexMemory)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to allocate Triangle Vertex memory with error: " + std::to_string(Error));
-    }
-
-    if((Error = vkBindBufferMemory(Context.Device, Context.MeshVertexBuffer, Context.MeshVertexMemory, 0)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to bind Triangle vertex buffer to memory with error: " + std::to_string(Error));
-    }
-  }
-
-  // Repeat with Index buffer
-  {
-    VkBufferCreateInfo iBufferInfo{};
-    iBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    iBufferInfo.size = sizeof(uint32_t) * Mesh.Indices.size();
-    iBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    iBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if((Error = vkCreateBuffer(Context.Device, &iBufferInfo, nullptr, &Context.MeshIndexBuffer)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to create Triangle Index buffer with error: " + std::to_string(Error));
-    }
-
-    VkMemoryRequirements iMemReq;
-    vkGetBufferMemoryRequirements(Context.Device, Context.MeshIndexBuffer, &iMemReq);
-
-    VkMemoryAllocateInfo iAllocInfo{};
-    iAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    iAllocInfo.pNext = nullptr;
-    iAllocInfo.allocationSize = iMemReq.size;
-    iAllocInfo.memoryTypeIndex = Context.Memory.Local;
-
-    if(iMemReq.memoryTypeBits & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) std::cout << "Index buffer supports Local\n";
-
-    if((Error = vkAllocateMemory(Context.Device, &iAllocInfo, nullptr, &Context.MeshIndexMemory)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to allocate Triangle Index Memory with error: " + std::to_string(Error));
-    }
-
-    if((Error = vkBindBufferMemory(Context.Device, Context.MeshIndexBuffer, Context.MeshIndexMemory, 0)) != VK_SUCCESS)
-    {
-      throw std::runtime_error("Failed to bind Triangle index memory with error: " + std::to_string(Error));
-    }
-  }
-
   // Map Transit Memory
   void* TransitMemory;
-  vkMapMemory(Context.Device, Context.TransitMemory, 0, 512000, 0, &TransitMemory);
+  vkMapMemory(Context.Device, Context.TransitMemory, 0, 512000000, 0, &TransitMemory);
 
   // Fill Transit Buffer with Vertices
   {
@@ -1340,15 +1698,20 @@ void InitMesh()
 
 void InitDescriptorPool()
 {
-  VkDescriptorPoolSize Size;
-  Size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  Size.descriptorCount = 1;
+  // Uniform, Sampler
+  VkDescriptorPoolSize DescriptorSizes[2];
+
+  DescriptorSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  DescriptorSizes[0].descriptorCount = 1;
+
+  DescriptorSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  DescriptorSizes[1].descriptorCount = 1;
 
   VkDescriptorPoolCreateInfo PoolInfo{};
   PoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  PoolInfo.maxSets = 1;
-  PoolInfo.poolSizeCount = 1;
-  PoolInfo.pPoolSizes = &Size;
+  PoolInfo.maxSets = 2; // One for the Uniform buffer, one for the Image sampler
+  PoolInfo.poolSizeCount = 2;
+  PoolInfo.pPoolSizes = DescriptorSizes;
 
   if((Error = vkCreateDescriptorPool(Context.Device, &PoolInfo, nullptr, &Context.DescPool)) != VK_SUCCESS)
   {
@@ -1358,7 +1721,7 @@ void InitDescriptorPool()
 
 void InitDescriptors()
 {
-  // allocate descriptor
+  // allocate Uniform descriptor
   {
     VkDescriptorSetAllocateInfo AllocInfo{};
     AllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1369,6 +1732,20 @@ void InitDescriptors()
     if((Error = vkAllocateDescriptorSets(Context.Device, &AllocInfo, &Context.DescSet)) != VK_SUCCESS)
     {
       throw std::runtime_error("Failed to create descriptor sets with error: " + std::to_string(Error));
+    }
+  }
+
+  // allocate Sampler descriptor
+  {
+    VkDescriptorSetAllocateInfo AllocInfo{};
+    AllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    AllocInfo.descriptorPool = Context.DescPool;
+    AllocInfo.descriptorSetCount = 1;
+    AllocInfo.pSetLayouts = &Context.SamplerLayout;
+
+    if((Error = vkAllocateDescriptorSets(Context.Device, &AllocInfo, &Mesh.TextureDescriptor)) != VK_SUCCESS)
+    {
+      throw std::runtime_error("Failed to create sampler set with error: " + std::to_string(Error));
     }
   }
 
@@ -1402,6 +1779,96 @@ void InitDescriptors()
     {
       throw std::runtime_error("Failed to bind memory to mvp buffer with error: " + std::to_string(Error));
     }
+  }
+}
+
+void InitSamplers()
+{
+  VkSamplerCreateInfo SamplerCI{};
+
+  // settup Sampler create info
+  {
+    SamplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+    SamplerCI.minLod = 1.f;
+    SamplerCI.maxLod = 1.f;
+
+    SamplerCI.minFilter = VK_FILTER_LINEAR;
+    SamplerCI.magFilter = VK_FILTER_LINEAR;
+
+    SamplerCI.maxAnisotropy = 4.f;
+    SamplerCI.mipLodBias = 1.f;
+    SamplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+    SamplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+
+    SamplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    SamplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    SamplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    SamplerCI.compareEnable = VK_FALSE;
+    SamplerCI.anisotropyEnable = VK_FALSE;
+
+    SamplerCI.unnormalizedCoordinates = VK_FALSE;
+  }
+
+  if((Error = vkCreateSampler(Context.Device, &SamplerCI, nullptr, &Mesh.Sampler_Albedo)) != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to create mesh sampler with error: " + std::to_string(Error));
+  }
+
+  // Quickly Perform layout transition
+  {
+    VkImageMemoryBarrier ImgBarrier{};
+    ImgBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    ImgBarrier.image = Mesh.Texture_Albedo;
+    ImgBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    ImgBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    ImgBarrier.srcAccessMask = VK_ACCESS_NONE;
+    ImgBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    ImgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    ImgBarrier.subresourceRange.layerCount = 1;
+    ImgBarrier.subresourceRange.levelCount = 1;
+    ImgBarrier.subresourceRange.baseMipLevel = 0;
+    ImgBarrier.subresourceRange.baseArrayLayer = 0;
+
+    VkCommandBufferBeginInfo BeginInfo{};
+    BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+      vkBeginCommandBuffer(Context.MemoryCmd, &BeginInfo);
+        vkCmdPipelineBarrier(Context.MemoryCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ImgBarrier);
+      vkEndCommandBuffer(Context.MemoryCmd);
+
+    VkSubmitInfo SubmitInfo{};
+    SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    SubmitInfo.commandBufferCount = 1;
+    SubmitInfo.pCommandBuffers = &Context.MemoryCmd;
+
+    vkQueueSubmit(Context.GraphicsQueue, 1, &SubmitInfo, Context.MemoryFence);
+
+    vkWaitForFences(Context.Device, 1, &Context.MemoryFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(Context.Device, 1, &Context.MemoryFence);
+  }
+
+  // Update sampler Texture
+  {
+    VkDescriptorImageInfo ImageWrite{};
+    ImageWrite.sampler = Mesh.Sampler_Albedo; // Target sampler
+    ImageWrite.imageView = Mesh.View_Albedo;
+    ImageWrite.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet WriteInfo{};
+    WriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+
+    WriteInfo.dstSet = Mesh.TextureDescriptor;
+    WriteInfo.pImageInfo = &ImageWrite;
+
+    WriteInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    WriteInfo.descriptorCount = 1;
+    WriteInfo.dstArrayElement = 0;
+
+    vkUpdateDescriptorSets(Context.Device, 1, &WriteInfo, 0, nullptr);
   }
 }
 
@@ -1448,13 +1915,18 @@ void RecordRender(uint32_t ImageIndex)
   BeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   BeginInfo.pNext = nullptr;
 
-  VkClearValue ClearValue{};
+  VkClearValue ColorClearValue{};
 
   // Color Values
-  ClearValue.color.int32[0] = 0; ClearValue.color.int32[1] = 0; ClearValue.color.int32[2] = 0; ClearValue.color.int32[3] = 0;
+  ColorClearValue.color.int32[0] = 0; ColorClearValue.color.int32[1] = 0; ColorClearValue.color.int32[2] = 0; ColorClearValue.color.int32[3] = 0;
 
-  // Depth Values
-  //ClearValue.depthStencil.depth = 0.f; ClearValue.depthStencil.stencil = 0;
+  VkClearValue DepthClearValue{};
+
+  // Depth Values                          // Depth stencil index
+  DepthClearValue.depthStencil.depth = 0.f; DepthClearValue.depthStencil.stencil = 1;
+
+  // a clear value for each attachment
+  VkClearValue ClearValues[] = {ColorClearValue, DepthClearValue};
 
   VkRenderPassBeginInfo RenderPassInfo{};
   RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1464,8 +1936,8 @@ void RecordRender(uint32_t ImageIndex)
   RenderPassInfo.renderArea.extent = {1280, 720};
   RenderPassInfo.renderArea.offset = {0, 0};
 
-  RenderPassInfo.clearValueCount = 1;
-  RenderPassInfo.pClearValues = &ClearValue;
+  RenderPassInfo.clearValueCount = 2;
+  RenderPassInfo.pClearValues = ClearValues;
 
   RenderPassInfo.framebuffer = Context.FrameBuffers[ImageIndex];
 
@@ -1479,6 +1951,7 @@ void RecordRender(uint32_t ImageIndex)
       vkCmdBindVertexBuffers(Context.RenderBuffers[ImageIndex], 0, 1, &Context.MeshVertexBuffer, &Offset);
       vkCmdBindIndexBuffer(Context.RenderBuffers[ImageIndex], Context.MeshIndexBuffer, Offset, VK_INDEX_TYPE_UINT32);
       vkCmdBindDescriptorSets(Context.RenderBuffers[ImageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, Context.PipelineLayout, 0, 1, &Context.DescSet, 0, nullptr);
+      vkCmdBindDescriptorSets(Context.RenderBuffers[ImageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, Context.PipelineLayout, 1, 1, &Mesh.TextureDescriptor, 0, nullptr);
       vkCmdBindPipeline(Context.RenderBuffers[ImageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, Context.Pipeline);
 
       // Draw the mesh
@@ -1520,6 +1993,7 @@ void Present(uint32_t RenderIndex)
 
   vkQueuePresentKHR(Context.GraphicsQueue, &PresentInfo);
 }
+
 void UpdateDescriptors()
 {
   // Update Buffer
@@ -1579,6 +2053,12 @@ void UpdateDescriptors()
 
 void Cleanup()
 {
+  vkDestroySampler(Context.Device, Mesh.Sampler_Albedo, nullptr);
+
+  vkDestroyImageView(Context.Device, Mesh.View_Albedo, nullptr);
+  vkDestroyImage(Context.Device, Mesh.Texture_Albedo, nullptr);
+  vkFreeMemory(Context.Device, Mesh.Memory_Albedo, nullptr);
+
   vkFreeCommandBuffers(Context.Device, Context.GraphicsPool, Context.RenderBuffers.size(), Context.RenderBuffers.data());
   vkFreeCommandBuffers(Context.Device, Context.GraphicsPool, 1, &Context.MemoryCmd);
   vkDestroyCommandPool(Context.Device, Context.GraphicsPool, nullptr);
@@ -1607,6 +2087,7 @@ void Cleanup()
   // This will destroy all descriptor sets allocated as well
   vkDestroyDescriptorPool(Context.Device, Context.DescPool, nullptr);
   vkDestroyDescriptorSetLayout(Context.Device, Context.DescLayout, nullptr);
+  vkDestroyDescriptorSetLayout(Context.Device, Context.SamplerLayout, nullptr);
 
   vkDestroyPipeline(Context.Device, Context.Pipeline, nullptr);
   vkDestroyPipelineLayout(Context.Device, Context.PipelineLayout, nullptr);
@@ -1622,6 +2103,13 @@ void Cleanup()
   for(uint32_t i = 0; i < Context.SwapchainImageViews.size(); i++)
   {
     vkDestroyImageView(Context.Device, Context.SwapchainImageViews[i], nullptr);
+    vkDestroyImageView(Context.Device, Context.DepthImageViews[i], nullptr);
+  }
+
+  for(uint32_t i = 0; i < Context.SwapchainImageViews.size(); i++)
+  {
+    vkDestroyImage(Context.Device, Context.DepthImages[i], nullptr);
+    vkFreeMemory(Context.Device, Context.DepthMemory[i], nullptr);
   }
 
   vkDestroyRenderPass(Context.Device, Context.Renderpass, nullptr);

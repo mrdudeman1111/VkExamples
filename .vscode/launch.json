@@ -8,10 +8,10 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/HelloTriangle",
+            "program": "${workspaceFolder}/build/HelloTexturedCube/HelloTextureCamera",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
+            "cwd": "${workspaceFolder}/build/HelloTexturedCube",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
@@ -27,6 +27,6 @@
                     "ignoreFailures": true
                 }
             ]
-        }
+        },
     ]
 }
