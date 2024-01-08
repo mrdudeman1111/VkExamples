@@ -270,9 +270,9 @@ class Camera
 
       CameraMatrix = glm::translate(glm::mat4(1.f), Position);
 
-      glm::vec3 LookRightVector = glm::vec3(CameraMatrix[0][0], CameraMatrix[0][1], CameraMatrix[0][2]);
+      glm::vec3 LookRightVector = glm::vec3(1.f, 0.f, 0.f);
       glm::vec3 LookUpVector = glm::vec3(0.f, 1.f, 0.f);
-      glm::vec3 LookForwardVector = (-1.f*glm::vec3(CameraMatrix[2][0], CameraMatrix[2][1], CameraMatrix[2][2]));
+      glm::vec3 LookForwardVector = (-1.f*glm::vec3(0.f, 0.f, 1.f));
 
       // The Rotation axis is the global Y
       CameraMatrix = glm::rotate(CameraMatrix, glm::radians(Rotation.y), LookUpVector);

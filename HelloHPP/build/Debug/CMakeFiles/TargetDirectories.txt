@@ -1,0 +1,3 @@
+/home/ethan/Repos/VkExamples/HelloHPP/build/Debug/CMakeFiles/hppExamples.dir
+/home/ethan/Repos/VkExamples/HelloHPP/build/Debug/CMakeFiles/edit_cache.dir
+/home/ethan/Repos/VkExamples/HelloHPP/build/Debug/CMakeFiles/rebuild_cache.dir

@@ -3,22 +3,22 @@ project("VkExamples")
 
 set(CMAKE_BUILD_TYPE DEBUG)
 
-include_directories(${CMAKE_SOURCE_DIR}/ThirdParty/assimp/include)
-include_directories(${CMAKE_SOURCE_DIR}/ThirdParty/assimpBin/include)
-include_directories(${CMAKE_SOURCE_DIR}/ThirdParty/glfw/include)
-include_directories(${CMAKE_SOURCE_DIR}/ThirdParty/glm)
+find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
+find_package(Sail REQUIRED)
+find_package(assimp REQUIRED)
+find_package(Vulkan REQUIRED)
 
-if(UNIX)
-  include_directories(/usr/local/include/sail/)
-  link_directories(/usr/local/lib/)
+include_directories(${Vulkan_INCLUDE_DIRS} ${assimp_INCLUDE_DIRS} ${Sail_INCLUDE_DIRS} ${glm_INCLUDE_DIRS} ${glfw3_INCLUDE_DIRS})
+
+if(Vulkan_FOUND)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloTriangle)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloColorTriangle)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloCube)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloCubeCamera)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloTextures)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/HelloLit)
+else()
+  message(cmake failed to find vulkan, build failed)
 endif()
-
-link_directories(${CMAKE_SOURCE_DIR}/ThirdParty/assimpBin/bin)
-link_directories(${CMAKE_SOURCE_DIR}/ThirdParty/glfwBin/src)
-
-add_subdirectory(${CMAKE_SOURCE_DIR}/HelloTriangle)
-add_subdirectory(${CMAKE_SOURCE_DIR}/HelloColorTriangle)
-add_subdirectory(${CMAKE_SOURCE_DIR}/HelloCube)
-add_subdirectory(${CMAKE_SOURCE_DIR}/HelloCubeCamera)
-add_subdirectory(${CMAKE_SOURCE_DIR}/HelloTexturedCube)
 

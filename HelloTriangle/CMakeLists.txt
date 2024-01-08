@@ -8,4 +8,4 @@ file(GLOB SRC
 
 add_executable(HelloTriangle ${SRC})
 
-target_link_libraries(HelloTriangle vulkan glfw3)
+target_link_libraries(HelloTriangle Vulkan::Vulkan glm::glm glfw)

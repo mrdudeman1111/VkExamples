@@ -1,0 +1,209 @@
+########### AGGREGATED COMPONENTS AND DEPENDENCIES FOR THE MULTI CONFIG #####################
+#############################################################################################
+
+list(APPEND sail_COMPONENT_NAMES SAIL::SailCommon SAIL::SailCodecs SAIL::Sail SAIL::SailManip SAIL::SailC++)
+list(REMOVE_DUPLICATES sail_COMPONENT_NAMES)
+list(APPEND sail_FIND_DEPENDENCY_NAMES GIF PNG TIFF libavif Jasper JPEG WebP)
+list(REMOVE_DUPLICATES sail_FIND_DEPENDENCY_NAMES)
+set(GIF_FIND_MODE "NO_MODULE")
+set(PNG_FIND_MODE "NO_MODULE")
+set(TIFF_FIND_MODE "NO_MODULE")
+set(libavif_FIND_MODE "NO_MODULE")
+set(Jasper_FIND_MODE "NO_MODULE")
+set(JPEG_FIND_MODE "NO_MODULE")
+set(WebP_FIND_MODE "NO_MODULE")
+
+########### VARIABLES #######################################################################
+#############################################################################################
+set(sail_PACKAGE_FOLDER_DEBUG "/home/ethan/.conan2/p/b/saila8a406b34a54f/p")
+set(sail_BUILD_MODULES_PATHS_DEBUG )
+
+
+set(sail_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include"
+			"${sail_PACKAGE_FOLDER_DEBUG}/include/sail")
+set(sail_RES_DIRS_DEBUG )
+set(sail_DEFINITIONS_DEBUG )
+set(sail_SHARED_LINK_FLAGS_DEBUG )
+set(sail_EXE_LINK_FLAGS_DEBUG )
+set(sail_OBJECTS_DEBUG )
+set(sail_COMPILE_DEFINITIONS_DEBUG )
+set(sail_COMPILE_OPTIONS_C_DEBUG )
+set(sail_COMPILE_OPTIONS_CXX_DEBUG )
+set(sail_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_BIN_DIRS_DEBUG )
+set(sail_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_LIBS_DEBUG sail-c++ sail-manip sail sail-codecs sail-common)
+set(sail_SYSTEM_LIBS_DEBUG dl pthread)
+set(sail_FRAMEWORK_DIRS_DEBUG )
+set(sail_FRAMEWORKS_DEBUG )
+set(sail_BUILD_DIRS_DEBUG )
+set(sail_NO_SONAME_MODE_DEBUG FALSE)
+
+
+# COMPOUND VARIABLES
+set(sail_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_COMPILE_OPTIONS_C_DEBUG}>")
+set(sail_LINKER_FLAGS_DEBUG
+    "$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SHARED_LINK_FLAGS_DEBUG}>"
+    "$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SHARED_LINK_FLAGS_DEBUG}>"
+    "$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_EXE_LINK_FLAGS_DEBUG}>")
+
+
+set(sail_COMPONENTS_DEBUG SAIL::SailCommon SAIL::SailCodecs SAIL::Sail SAIL::SailManip SAIL::SailC++)
+########### COMPONENT SAIL::SailC++ VARIABLES ############################################
+
+set(sail_SAIL_SailC++_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include")
+set(sail_SAIL_SailC++_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_SAIL_SailC++_BIN_DIRS_DEBUG )
+set(sail_SAIL_SailC++_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_SAIL_SailC++_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_SAIL_SailC++_RES_DIRS_DEBUG )
+set(sail_SAIL_SailC++_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailC++_OBJECTS_DEBUG )
+set(sail_SAIL_SailC++_COMPILE_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailC++_COMPILE_OPTIONS_C_DEBUG "")
+set(sail_SAIL_SailC++_COMPILE_OPTIONS_CXX_DEBUG "")
+set(sail_SAIL_SailC++_LIBS_DEBUG sail-c++)
+set(sail_SAIL_SailC++_SYSTEM_LIBS_DEBUG )
+set(sail_SAIL_SailC++_FRAMEWORK_DIRS_DEBUG )
+set(sail_SAIL_SailC++_FRAMEWORKS_DEBUG )
+set(sail_SAIL_SailC++_DEPENDENCIES_DEBUG SAIL::Sail SAIL::SailManip)
+set(sail_SAIL_SailC++_SHARED_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailC++_EXE_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailC++_NO_SONAME_MODE_DEBUG FALSE)
+
+# COMPOUND VARIABLES
+set(sail_SAIL_SailC++_LINKER_FLAGS_DEBUG
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SAIL_SailC++_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SAIL_SailC++_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_SAIL_SailC++_EXE_LINK_FLAGS_DEBUG}>
+)
+set(sail_SAIL_SailC++_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_SAIL_SailC++_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_SAIL_SailC++_COMPILE_OPTIONS_C_DEBUG}>")
+########### COMPONENT SAIL::SailManip VARIABLES ############################################
+
+set(sail_SAIL_SailManip_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include")
+set(sail_SAIL_SailManip_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_SAIL_SailManip_BIN_DIRS_DEBUG )
+set(sail_SAIL_SailManip_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_SAIL_SailManip_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_SAIL_SailManip_RES_DIRS_DEBUG )
+set(sail_SAIL_SailManip_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailManip_OBJECTS_DEBUG )
+set(sail_SAIL_SailManip_COMPILE_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailManip_COMPILE_OPTIONS_C_DEBUG "")
+set(sail_SAIL_SailManip_COMPILE_OPTIONS_CXX_DEBUG "")
+set(sail_SAIL_SailManip_LIBS_DEBUG sail-manip)
+set(sail_SAIL_SailManip_SYSTEM_LIBS_DEBUG )
+set(sail_SAIL_SailManip_FRAMEWORK_DIRS_DEBUG )
+set(sail_SAIL_SailManip_FRAMEWORKS_DEBUG )
+set(sail_SAIL_SailManip_DEPENDENCIES_DEBUG SAIL::SailCommon)
+set(sail_SAIL_SailManip_SHARED_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailManip_EXE_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailManip_NO_SONAME_MODE_DEBUG FALSE)
+
+# COMPOUND VARIABLES
+set(sail_SAIL_SailManip_LINKER_FLAGS_DEBUG
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SAIL_SailManip_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SAIL_SailManip_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_SAIL_SailManip_EXE_LINK_FLAGS_DEBUG}>
+)
+set(sail_SAIL_SailManip_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_SAIL_SailManip_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_SAIL_SailManip_COMPILE_OPTIONS_C_DEBUG}>")
+########### COMPONENT SAIL::Sail VARIABLES ############################################
+
+set(sail_SAIL_Sail_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include")
+set(sail_SAIL_Sail_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_SAIL_Sail_BIN_DIRS_DEBUG )
+set(sail_SAIL_Sail_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_SAIL_Sail_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_SAIL_Sail_RES_DIRS_DEBUG )
+set(sail_SAIL_Sail_DEFINITIONS_DEBUG )
+set(sail_SAIL_Sail_OBJECTS_DEBUG )
+set(sail_SAIL_Sail_COMPILE_DEFINITIONS_DEBUG )
+set(sail_SAIL_Sail_COMPILE_OPTIONS_C_DEBUG "")
+set(sail_SAIL_Sail_COMPILE_OPTIONS_CXX_DEBUG "")
+set(sail_SAIL_Sail_LIBS_DEBUG sail)
+set(sail_SAIL_Sail_SYSTEM_LIBS_DEBUG dl pthread)
+set(sail_SAIL_Sail_FRAMEWORK_DIRS_DEBUG )
+set(sail_SAIL_Sail_FRAMEWORKS_DEBUG )
+set(sail_SAIL_Sail_DEPENDENCIES_DEBUG SAIL::SailCommon SAIL::SailCodecs)
+set(sail_SAIL_Sail_SHARED_LINK_FLAGS_DEBUG )
+set(sail_SAIL_Sail_EXE_LINK_FLAGS_DEBUG )
+set(sail_SAIL_Sail_NO_SONAME_MODE_DEBUG FALSE)
+
+# COMPOUND VARIABLES
+set(sail_SAIL_Sail_LINKER_FLAGS_DEBUG
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SAIL_Sail_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SAIL_Sail_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_SAIL_Sail_EXE_LINK_FLAGS_DEBUG}>
+)
+set(sail_SAIL_Sail_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_SAIL_Sail_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_SAIL_Sail_COMPILE_OPTIONS_C_DEBUG}>")
+########### COMPONENT SAIL::SailCodecs VARIABLES ############################################
+
+set(sail_SAIL_SailCodecs_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include")
+set(sail_SAIL_SailCodecs_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_SAIL_SailCodecs_BIN_DIRS_DEBUG )
+set(sail_SAIL_SailCodecs_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_SAIL_SailCodecs_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_SAIL_SailCodecs_RES_DIRS_DEBUG )
+set(sail_SAIL_SailCodecs_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailCodecs_OBJECTS_DEBUG )
+set(sail_SAIL_SailCodecs_COMPILE_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailCodecs_COMPILE_OPTIONS_C_DEBUG "")
+set(sail_SAIL_SailCodecs_COMPILE_OPTIONS_CXX_DEBUG "")
+set(sail_SAIL_SailCodecs_LIBS_DEBUG sail-codecs)
+set(sail_SAIL_SailCodecs_SYSTEM_LIBS_DEBUG )
+set(sail_SAIL_SailCodecs_FRAMEWORK_DIRS_DEBUG )
+set(sail_SAIL_SailCodecs_FRAMEWORKS_DEBUG )
+set(sail_SAIL_SailCodecs_DEPENDENCIES_DEBUG SAIL::SailCommon GIF::GIF JPEG::JPEG PNG::PNG TIFF::TIFF avif Jasper::Jasper libwebp::libwebp)
+set(sail_SAIL_SailCodecs_SHARED_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailCodecs_EXE_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailCodecs_NO_SONAME_MODE_DEBUG FALSE)
+
+# COMPOUND VARIABLES
+set(sail_SAIL_SailCodecs_LINKER_FLAGS_DEBUG
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SAIL_SailCodecs_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SAIL_SailCodecs_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_SAIL_SailCodecs_EXE_LINK_FLAGS_DEBUG}>
+)
+set(sail_SAIL_SailCodecs_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_SAIL_SailCodecs_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_SAIL_SailCodecs_COMPILE_OPTIONS_C_DEBUG}>")
+########### COMPONENT SAIL::SailCommon VARIABLES ############################################
+
+set(sail_SAIL_SailCommon_INCLUDE_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/include/sail")
+set(sail_SAIL_SailCommon_LIB_DIRS_DEBUG "${sail_PACKAGE_FOLDER_DEBUG}/lib")
+set(sail_SAIL_SailCommon_BIN_DIRS_DEBUG )
+set(sail_SAIL_SailCommon_LIBRARY_TYPE_DEBUG STATIC)
+set(sail_SAIL_SailCommon_IS_HOST_WINDOWS_DEBUG 0)
+set(sail_SAIL_SailCommon_RES_DIRS_DEBUG )
+set(sail_SAIL_SailCommon_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailCommon_OBJECTS_DEBUG )
+set(sail_SAIL_SailCommon_COMPILE_DEFINITIONS_DEBUG )
+set(sail_SAIL_SailCommon_COMPILE_OPTIONS_C_DEBUG "")
+set(sail_SAIL_SailCommon_COMPILE_OPTIONS_CXX_DEBUG "")
+set(sail_SAIL_SailCommon_LIBS_DEBUG sail-common)
+set(sail_SAIL_SailCommon_SYSTEM_LIBS_DEBUG )
+set(sail_SAIL_SailCommon_FRAMEWORK_DIRS_DEBUG )
+set(sail_SAIL_SailCommon_FRAMEWORKS_DEBUG )
+set(sail_SAIL_SailCommon_DEPENDENCIES_DEBUG )
+set(sail_SAIL_SailCommon_SHARED_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailCommon_EXE_LINK_FLAGS_DEBUG )
+set(sail_SAIL_SailCommon_NO_SONAME_MODE_DEBUG FALSE)
+
+# COMPOUND VARIABLES
+set(sail_SAIL_SailCommon_LINKER_FLAGS_DEBUG
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:${sail_SAIL_SailCommon_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,MODULE_LIBRARY>:${sail_SAIL_SailCommon_SHARED_LINK_FLAGS_DEBUG}>
+        $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:${sail_SAIL_SailCommon_EXE_LINK_FLAGS_DEBUG}>
+)
+set(sail_SAIL_SailCommon_COMPILE_OPTIONS_DEBUG
+    "$<$<COMPILE_LANGUAGE:CXX>:${sail_SAIL_SailCommon_COMPILE_OPTIONS_CXX_DEBUG}>"
+    "$<$<COMPILE_LANGUAGE:C>:${sail_SAIL_SailCommon_COMPILE_OPTIONS_C_DEBUG}>")

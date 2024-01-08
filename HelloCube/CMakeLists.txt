@@ -1,5 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.18.1)
-project("Hello Triangle")
+project("Hello Cube")
 
 #set(CMAKE_BUILD_TYPE Debug)
 
@@ -10,5 +10,5 @@ configure_file(Mesh.dae CubeMesh.dae COPYONLY)
 
 add_executable(HelloCube ${SRC})
 
-target_link_libraries(HelloCube vulkan glfw3 assimp)
+target_link_libraries(HelloCube Vulkan::Vulkan glm::glm glfw assimp::assimp)
 
